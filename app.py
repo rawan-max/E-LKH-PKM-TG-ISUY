@@ -6,151 +6,197 @@ import io
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="E-LKH Puskesmas Tanjung Isuy", layout="centered")
 
-# Kamus Hari Indonesia
-HARI_INDO = {
-    "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
-    "Thursday": "Kamis", "Friday": "Jumat", "Saturday": "Sabtu", "Sunday": "Minggu"
-}
+# CSS Khusus untuk Tampilan Dokumen agar mirip PDF asli
+STYLE_CETAK = """
+<style>
+    .laporan-box {
+        background-color: white;
+        padding: 30px;
+        color: black;
+        font-family: 'Arial', sans-serif;
+        line-height: 1.5;
+    }
+    .header-dok {
+        text-align: center;
+        font-weight: bold;
+        font-size: 18px;
+        text-decoration: underline;
+        margin-bottom: 20px;
+    }
+    .tabel-meta { width: 100%; margin-bottom: 20px; border: none; }
+    .tabel-meta td { padding: 2px 0; font-size: 14px; border: none !important; }
+    
+    .tabel-data {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    .tabel-data th, .tabel-data td {
+        border: 1px solid black !important;
+        padding: 8px;
+        text-align: center;
+        font-size: 13px;
+    }
+    .tanda-tangan-area {
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+    }
+    .box-ttd {
+        text-align: center;
+        width: 45%;
+        font-size: 14px;
+    }
+    @media print {
+        .no-print { display: none !important; }
+        .laporan-box { border: none; padding: 0; }
+    }
+</style>
+"""
 
-# CSS untuk tampilan cetak agar rapi
-st.markdown("""
-    <style>
-    .print-container { background-color: white; padding: 30px; color: black; font-family: 'Arial'; border: 1px solid #eee; line-height: 1.4; }
-    .doc-header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 20px; text-decoration: underline; }
-    .meta-table { width: 100%; margin-bottom: 15px; font-size: 14px; }
-    .meta-table td { padding: 1px 5px; vertical-align: top; }
-    .signature-container { margin-top: 30px; display: flex; justify-content: space-between; font-size: 14px; }
-    .sig-box { text-align: center; width: 45%; }
-    th { background-color: #f2f2f2; font-size: 13px; padding: 5px; }
-    td { font-size: 13px; padding: 5px; }
-    @media print { .no-print { display: none !important; } .print-container { border: none; padding: 0; } }
-    </style>
-""", unsafe_allow_html=True)
+st.markdown(STYLE_CETAK, unsafe_allow_html=True)
 
-st.title("🏥 E-LKH Mobile")
+# Kamus Hari
+HARI_ID = {"Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu", "Thursday": "Kamis", "Friday": "Jumat", "Saturday": "Sabtu", "Sunday": "Minggu"}
 
-# --- 1. LOAD MASTER DATA ---
+st.title("🏥 E-LKH Tanjung Isuy")
+
+# --- 1. DATA PEGAWAI ---
 if 'master_data' not in st.session_state:
     st.session_state.master_data = None
 
 if st.session_state.master_data is None:
-    st.info("Silakan upload Master Data Pegawai.")
-    uploaded_file = st.file_uploader("Upload File Excel", type=['xlsx', 'xlsm'])
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file, sheet_name=0)
+    st.info("Silakan unggah Master Data Pegawai.")
+    file_excel = st.file_uploader("Upload Excel", type=['xlsx', 'xlsm'])
+    if file_excel:
+        df = pd.read_excel(file_excel, sheet_name=0)
         df.columns = [str(col).upper().strip() for col in df.columns]
         st.session_state.master_data = df
         st.rerun()
 
 # --- 2. LOGIN ---
-if st.session_state.master_data is not None and 'user_login' not in st.session_state:
+if st.session_state.master_data is not None and 'user' not in st.session_state:
     df = st.session_state.master_data
     col_nama = next((c for c in df.columns if 'NAMA' in c), None)
-    daftar_nama = sorted(df[col_nama].dropna().unique())
+    list_nama = sorted(df[col_nama].dropna().unique())
     
-    with st.container(border=True):
-        st.subheader("🔐 Login Pegawai")
-        u_nama = st.selectbox("Pilih Nama Anda:", ["-- Pilih Nama --"] + daftar_nama)
-        
-        if st.button("Masuk"):
-            if u_nama != "-- Pilih Nama --":
-                u_row = df[df[col_nama] == u_nama].iloc[0]
-                st.session_state.user_login = {
-                    "Nama": u_nama,
-                    "NIP": str(u_row.get('NIP', u_row.get('NIP BARU', '-'))),
-                    "Jabatan": str(u_row.get('JABATAN', '-')),
-                    "Unit": "UPTD Puskesmas Tanjung Isuy",
-                    "Atasan_Nama": "dr. Irana Priska",
-                    "Atasan_NIP": "19880929 201503 2 007"
+    with st.form("login_form"):
+        nama_pilih = st.selectbox("Pilih Nama Anda:", ["-- Pilih --"] + list_nama)
+        if st.form_submit_button("Masuk"):
+            if nama_pilih != "-- Pilih --":
+                row = df[df[col_nama] == nama_pilih].iloc[0]
+                st.session_state.user = {
+                    "nama": nama_pilih,
+                    "nip": str(row.get('NIP', row.get('NIP BARU', '-'))),
+                    "jabatan": str(row.get('JABATAN', '-')),
+                    "atasan_nama": "dr. Irana Priska",
+                    "atasan_nip": "19880929 201503 2 007"
                 }
                 st.rerun()
 
-# --- 3. INPUT AKTIVITAS ---
-if 'user_login' in st.session_state:
-    user = st.session_state.user_login
+# --- 3. INPUT ---
+if 'user' in st.session_state:
+    u = st.session_state.user
     
     with st.sidebar:
-        st.write(f"Login sebagai: **{user['Nama']}**")
+        st.success(f"User: {u['nama']}")
         if st.button("Log Out"):
             st.session_state.clear()
             st.rerun()
 
-    with st.form("lkh_form", clear_on_submit=True):
-        st.subheader("📝 Input Laporan")
-        tgl = st.date_input("Tanggal", datetime.now())
-        c1, c2 = st.columns(2)
-        w_mulai = c1.text_input("Mulai", "07.45")
-        w_selesai = c2.text_input("Selesai", "14.00")
-        aktivitas = st.text_area("Aktivitas Kerja")
-        output = st.text_input("Output (Misal: 1 Kegiatan)")
+    with st.form("input_lkh", clear_on_submit=True):
+        col_a, col_b = st.columns(2)
+        tgl = col_a.date_input("Tanggal", datetime.now())
+        output_txt = col_b.text_input("Output (Misal: 1 Kegiatan)")
         
-        if st.form_submit_button("Tambah"):
+        col_c, col_d = st.columns(2)
+        jam_m = col_c.text_input("Jam Mulai", "07.45")
+        jam_s = col_d.text_input("Jam Selesai", "14.00")
+        
+        aksi = st.text_area("Aktivitas Kerja")
+        
+        if st.form_submit_button("Tambahkan"):
             try:
-                t1 = datetime.strptime(w_mulai.replace(".", ":"), "%H:%M")
-                t2 = datetime.strptime(w_selesai.replace(".", ":"), "%H:%M")
-                durasi = int((t2 - t1).total_seconds() / 60)
+                t1 = datetime.strptime(jam_m.replace(".", ":"), "%H:%M")
+                t2 = datetime.strptime(jam_s.replace(".", ":"), "%H:%M")
+                menit = int((t2 - t1).total_seconds() / 60)
                 
-                if 'entries' not in st.session_state: st.session_state.entries = []
-                st.session_state.entries.append({
-                    "HARI": HARI_INDO.get(tgl.strftime("%A"), tgl.strftime("%A")),
-                    "TANGGAL": tgl.strftime("%d"),
-                    "BULAN": tgl.strftime("%B").upper(),
-                    "WAKTU": f"{w_mulai} - {w_selesai}",
-                    "AKTIVITAS": aktivitas,
-                    "OUTPUT": output,
-                    "DURASI": durasi
+                if 'data_lkh' not in st.session_state: st.session_state.data_lkh = []
+                st.session_state.data_lkh.append({
+                    "hari": HARI_ID.get(tgl.strftime("%A"), tgl.strftime("%A")),
+                    "tgl": tgl.strftime("%d"),
+                    "bln": tgl.strftime("%B").upper(),
+                    "waktu": f"{jam_m} - {jam_s}",
+                    "aktivitas": aksi,
+                    "output": output_txt,
+                    "durasi": menit
                 })
-                st.toast("Tersimpan!")
+                st.toast("Data ditambah!")
             except:
-                st.error("Gunakan format HH.MM")
+                st.error("Format jam salah (Gunakan 07.45)")
 
-    # --- 4. TAMPILAN PRATINJAU (RENDER HTML) ---
-    if 'entries' in st.session_state and len(st.session_state.entries) > 0:
+    # --- 4. TAMPILAN DOKUMEN (FIXED RENDER) ---
+    if 'data_lkh' in st.session_state and len(st.session_state.data_lkh) > 0:
         st.divider()
-        st.subheader("📄 Pratinjau Dokumen")
+        latest = st.session_state.data_lkh[-1]
+        df_rekap = pd.DataFrame(st.session_state.data_lkh)
         
-        df_view = pd.DataFrame(st.session_state.entries)
-        latest = st.session_state.entries[-1]
-        
-        html_doc = f"""
-        <div class="print-container">
-            <div class="doc-header">LAPORAN KERJA HARIAN</div>
-            <table class="meta-table">
-                <tr><td width="120">BULAN</td><td>: {latest['BULAN']}</td></tr>
-                <tr><td>HARI</td><td>: {latest['HARI']}</td></tr>
-                <tr><td>TANGGAL</td><td>: {latest['TANGGAL']}</td></tr>
-                <tr><td>NAMA</td><td>: {user['Nama']}</td></tr>
-                <tr><td>NIP</td><td>: {user['NIP']}</td></tr>
-                <tr><td>JABATAN</td><td>: {user['Jabatan']}</td></tr>
-                <tr><td>UNIT KERJA</td><td>: {user['Unit']}</td></tr>
-            </table>
-            <table border="1" style="width:100%; border-collapse: collapse; text-align:center;">
-                <tr>
-                    <th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI AKTIVITAS (MENIT)</th>
-                </tr>
-        """
-        for i, row in enumerate(st.session_state.entries):
-            html_doc += f"<tr><td>{i+1}</td><td>{row['WAKTU']}</td><td style='text-align:left;'>{row['AKTIVITAS']}</td><td>{row['OUTPUT']}</td><td>{row['DURASI']}</td></tr>"
-        
-        html_doc += f"""
-                <tr style="font-weight:bold;">
-                    <td colspan="4" style="text-align:right;">JUMLAH</td><td>{df_view['DURASI'].sum()}</td>
-                </tr>
-            </table>
+        # MEMBANGUN STRUKTUR HTML
+        html_laporan = f"""
+        <div class="laporan-box">
+            <div class="header-dok">LAPORAN KERJA HARIAN</div>
             
-            <div class="signature-container">
-                <div class="sig-box">
+            <table class="tabel-meta">
+                <tr><td width="120">BULAN</td><td>: {latest['bln']}</td></tr>
+                <tr><td>HARI</td><td>: {latest['hari']}</td></tr>
+                <tr><td>TANGGAL</td><td>: {latest['tgl']}</td></tr>
+                <tr><td>NAMA</td><td>: {u['nama']}</td></tr>
+                <tr><td>NIP</td><td>: {u['nip']}</td></tr>
+                <tr><td>JABATAN</td><td>: {u['jabatan']}</td></tr>
+                <tr><td>UNIT KERJA</td><td>: UPTD Puskesmas Tanjung Isuy</td></tr>
+            </table>
+
+            <table class="tabel-data">
+                <thead>
+                    <tr>
+                        <th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI AKTIVITAS (MENIT)</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        for idx, item in enumerate(st.session_state.data_lkh):
+            html_laporan += f"""
+                <tr>
+                    <td>{idx+1}</td><td>{item['waktu']}</td><td style="text-align:left;">{item['aktivitas']}</td>
+                    <td>{item['output']}</td><td>{item['durasi']}</td>
+                </tr>
+            """
+            
+        html_laporan += f"""
+                <tr style="font-weight:bold;">
+                    <td colspan="4" style="text-align:right;">JUMLAH</td><td>{df_rekap['durasi'].sum()}</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <div class="tanda-tangan-area">
+                <div class="box-ttd">
                     Menyetujui<br>Pejabat Penilai/ Atasan Langsung<br><br><br><br><br>
-                    <b><u>{user['Atasan_Nama']}</u></b><br>NIP. {user['Atasan_NIP']}
+                    <b><u>{u['atasan_nama']}</u></b><br>NIP. {u['atasan_nip']}
                 </div>
-                <div class="sig-box">
-                    {user['Jabatan']}<br>UPTD Puskesmas Tanjung Isuy<br><br><br><br><br>
-                    <b><u>{user['Nama']}</u></b><br>NIP. {user['NIP']}
+                <div class="box-ttd">
+                    {u['jabatan']}<br>UPTD Puskesmas Tanjung Isuy<br><br><br><br><br>
+                    <b><u>{u['nama']}</u></b><br>NIP. {u['nip']}
                 </div>
             </div>
         </div>
         """
-        # INI BAGIAN PALING PENTING AGAR TIDAK MUNCUL KODE
-        st.markdown(html_doc, unsafe_allow_html=True)
         
-        st.caption("Gunakan fitur 'Print' di browser (Ctrl+P) untuk menyimpan sebagai PDF.")
+        # BAGIAN INI YANG MEMASTIKAN HTML DI-RENDER JADI TAMPILAN
+        st.write("---")
+        st.markdown(html_laporan, unsafe_allow_html=True)
+        
+        # Tombol Cetak Browser
+        if st.button("🖨️ Cetak ke PDF"):
+            st.info("Gunakan kombinasi tombol Ctrl + P (Windows) atau Command + P (Mac) pada keyboard Anda untuk menyimpan sebagai PDF.")
