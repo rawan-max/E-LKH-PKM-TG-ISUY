@@ -4,7 +4,7 @@ from datetime import datetime
 import io
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="E-LKH Puskesmas Tanjung Isuy", layout="mobile")
+st.set_page_config(page_title="E-LKH Puskesmas Tanjung Isuy", layout="centered")
 
 # --- JUDUL & HEADER ---
 st.title("🏥 E-LKH Mobile")
