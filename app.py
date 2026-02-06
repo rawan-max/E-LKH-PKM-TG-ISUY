@@ -28,9 +28,23 @@ if st.session_state.master_data is not None:
         if st.button("Masuk"):
             if nama_pilih != "-- Pilih --":
                 row = df[df[col_nama] == nama_pilih].iloc[0]
+                
+                # LOGIKA MENCARI JENIS NIP (NIP / NIPPPK / NIPPPK PW)
+                # Mencari kolom yang mengandung kata 'NIP'
+                id_label = "NIP"
+                id_value = "-"
+                for col in df.columns:
+                    if "NIP" in col:
+                        val = str(row.get(col, "-"))
+                        if val != "nan" and val != "-":
+                            id_label = col # Akan mengambil label sesuai kolom (NIP/NIPPPK/NIPPPK PW)
+                            id_value = val
+                            break
+                
                 st.session_state.user = {
                     "nama": nama_pilih,
-                    "nip": str(row.get('NIP', '-')),
+                    "id_label": id_label,
+                    "id_value": id_value,
                     "jabatan": str(row.get('JABATAN', '-')),
                     "atasan": "dr. Irana Priska",
                     "nip_atasan": "19880929 201503 2 007"
@@ -55,18 +69,21 @@ if st.session_state.master_data is not None:
             
             if st.form_submit_button("Simpan"):
                 if 'list_lkh' not in st.session_state: st.session_state.list_lkh = []
-                t1 = datetime.strptime(jam_m.replace(".", ":"), "%H:%M")
-                t2 = datetime.strptime(jam_s.replace(".", ":"), "%H:%M")
-                durasi = int((t2 - t1).total_seconds() / 60)
-                
-                st.session_state.list_lkh.append({
-                    "hari": tgl.strftime("%A"), "tgl": tgl.strftime("%d"),
-                    "bln": tgl.strftime("%B").upper(), "waktu": f"{jam_m} - {jam_s}",
-                    "akt": akt, "out": out, "durasi": durasi
-                })
-                st.rerun()
+                try:
+                    t1 = datetime.strptime(jam_m.replace(".", ":"), "%H:%M")
+                    t2 = datetime.strptime(jam_s.replace(".", ":"), "%H:%M")
+                    durasi = int((t2 - t1).total_seconds() / 60)
+                    
+                    st.session_state.list_lkh.append({
+                        "hari": tgl.strftime("%A"), "tgl": tgl.strftime("%d"),
+                        "bln": tgl.strftime("%B").upper(), "waktu": f"{jam_m} - {jam_s}",
+                        "akt": akt, "out": out, "durasi": durasi
+                    })
+                    st.rerun()
+                except:
+                    st.error("Format jam salah!")
 
-        # --- 4. TAMPILAN LAPORAN ---
+        # --- 4. TAMPILAN LAPORAN (HTML RENDER) ---
         if 'list_lkh' in st.session_state and len(st.session_state.list_lkh) > 0:
             st.divider()
             latest = st.session_state.list_lkh[-1]
@@ -76,30 +93,19 @@ if st.session_state.master_data is not None:
             for idx, item in enumerate(st.session_state.list_lkh):
                 baris += f"<tr><td>{idx+1}</td><td>{item['waktu']}</td><td style='text-align:left;'>{item['akt']}</td><td>{item['out']}</td><td>{item['durasi']}</td></tr>"
 
-            # Gabungkan HTML dan CSS dalam satu string
             html_content = f"""
-            <div style="background:white; color:black; padding:20px; font-family:Arial;">
-                <h3 style="text-align:center; text-decoration:underline;">LAPORAN KERJA HARIAN</h3>
-                <table style="width:100%; font-size:12px; border:none;">
-                    <tr><td width="100">BULAN</td><td>: {latest['bln']}</td></tr>
+            <div style="background:white; color:black; padding:30px; font-family:Arial; border:1px solid #eee;">
+                <h3 style="text-align:center; text-decoration:underline; margin-bottom:20px;">LAPORAN KERJA HARIAN</h3>
+                <table style="width:100%; font-size:13px; border:none; margin-bottom:15px;">
+                    <tr><td width="120">BULAN</td><td>: {latest['bln']}</td></tr>
                     <tr><td>HARI</td><td>: {latest['hari']}</td></tr>
                     <tr><td>TANGGAL</td><td>: {latest['tgl']}</td></tr>
                     <tr><td>NAMA</td><td>: {u['nama']}</td></tr>
-                    <tr><td>NIP</td><td>: {u['nip']}</td></tr>
+                    <tr><td>{u['id_label']}</td><td>: {u['id_value']}</td></tr>
                     <tr><td>JABATAN</td><td>: {u['jabatan']}</td></tr>
+                    <tr><td>UNIT KERJA</td><td>: UPTD Puskesmas Tanjung Isuy</td></tr>
                 </table>
-                <table border="1" style="width:100%; border-collapse:collapse; margin-top:10px; text-align:center; font-size:12px;">
-                    <tr style="background:#eee;"><th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI</th></tr>
+                <table border="1" style="width:100%; border-collapse:collapse; text-align:center; font-size:12px;">
+                    <tr style="background:#f2f2f2;"><th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI</th></tr>
                     {baris}
-                    <tr style="font-weight:bold;"><td colspan="4" style="text-align:right;">JUMLAH</td><td>{total}</td></tr>
-                </table>
-                <div style="margin-top:30px; display:flex; justify-content:space-between; font-size:12px; text-align:center;">
-                    <div style="width:45%;">Menyetujui<br>Atasan Langsung<br><br><br><br><b><u>{u['atasan']}</u></b><br>NIP. {u['nip_atasan']}</div>
-                    <div style="width:45%;">{u['jabatan']}<br>PKM Tanjung Isuy<br><br><br><br><b><u>{u['nama']}</u></b><br>NIP. {u['nip']}</div>
-                </div>
-            </div>
-            """
-            
-            # MENGGUNAKAN COMPONENTS UNTUK RENDER PASTI
-            st.components.v1.html(html_content, height=500, scrolling=True)
-            st.button("🖨️ Cetak PDF (Gunakan Ctrl+P)")
+                    <tr style="
