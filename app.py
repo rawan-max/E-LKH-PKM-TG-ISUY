@@ -12,7 +12,7 @@ HARI_INDO = {
     "Thursday": "Kamis", "Friday": "Jumat", "Saturday": "Sabtu", "Sunday": "Minggu"
 }
 
-# CSS untuk tampilan cetak agar persis seperti PDF
+# CSS untuk tampilan cetak agar rapi
 st.markdown("""
     <style>
     .print-container { background-color: white; padding: 30px; color: black; font-family: 'Arial'; border: 1px solid #eee; line-height: 1.4; }
@@ -34,7 +34,7 @@ if 'master_data' not in st.session_state:
     st.session_state.master_data = None
 
 if st.session_state.master_data is None:
-    st.info("Silakan upload Master Data Pegawai untuk memulai.")
+    st.info("Silakan upload Master Data Pegawai.")
     uploaded_file = st.file_uploader("Upload File Excel", type=['xlsx', 'xlsm'])
     if uploaded_file:
         df = pd.read_excel(uploaded_file, sheet_name=0)
@@ -42,7 +42,7 @@ if st.session_state.master_data is None:
         st.session_state.master_data = df
         st.rerun()
 
-# --- 2. LOGIN (HANYA PILIH NAMA PENGGUNA) ---
+# --- 2. LOGIN ---
 if st.session_state.master_data is not None and 'user_login' not in st.session_state:
     df = st.session_state.master_data
     col_nama = next((c for c in df.columns if 'NAMA' in c), None)
@@ -55,8 +55,6 @@ if st.session_state.master_data is not None and 'user_login' not in st.session_s
         if st.button("Masuk"):
             if u_nama != "-- Pilih Nama --":
                 u_row = df[df[col_nama] == u_nama].iloc[0]
-                
-                # DATA ATASAN DIKUNCI SESUAI PERMINTAAN
                 st.session_state.user_login = {
                     "Nama": u_nama,
                     "NIP": str(u_row.get('NIP', u_row.get('NIP BARU', '-'))),
@@ -66,19 +64,14 @@ if st.session_state.master_data is not None and 'user_login' not in st.session_s
                     "Atasan_NIP": "19880929 201503 2 007"
                 }
                 st.rerun()
-            else:
-                st.error("Pilih nama Anda terlebih dahulu!")
 
 # --- 3. INPUT AKTIVITAS ---
 if 'user_login' in st.session_state:
     user = st.session_state.user_login
     
     with st.sidebar:
-        st.header("👤 Profil Login")
-        st.write(f"Nama: **{user['Nama']}**")
-        st.write(f"NIP: **{user['NIP']}**")
-        st.divider()
-        if st.button("Log Out / Reset"):
+        st.write(f"Login sebagai: **{user['Nama']}**")
+        if st.button("Log Out"):
             st.session_state.clear()
             st.rerun()
 
@@ -86,19 +79,18 @@ if 'user_login' in st.session_state:
         st.subheader("📝 Input Laporan")
         tgl = st.date_input("Tanggal", datetime.now())
         c1, c2 = st.columns(2)
-        w_mulai = c1.text_input("Mulai (Contoh 07.45)", "07.45")
-        w_selesai = c2.text_input("Selesai (Contoh 14.00)", "14.00")
-        aktivitas = st.text_area("Deskripsi Aktivitas Kerja")
-        output = st.text_input("Output (Contoh: 1 Kegiatan)")
+        w_mulai = c1.text_input("Mulai", "07.45")
+        w_selesai = c2.text_input("Selesai", "14.00")
+        aktivitas = st.text_area("Aktivitas Kerja")
+        output = st.text_input("Output (Misal: 1 Kegiatan)")
         
-        if st.form_submit_button("Simpan Aktivitas"):
+        if st.form_submit_button("Tambah"):
             try:
                 t1 = datetime.strptime(w_mulai.replace(".", ":"), "%H:%M")
                 t2 = datetime.strptime(w_selesai.replace(".", ":"), "%H:%M")
                 durasi = int((t2 - t1).total_seconds() / 60)
                 
                 if 'entries' not in st.session_state: st.session_state.entries = []
-                
                 st.session_state.entries.append({
                     "HARI": HARI_INDO.get(tgl.strftime("%A"), tgl.strftime("%A")),
                     "TANGGAL": tgl.strftime("%d"),
@@ -108,11 +100,11 @@ if 'user_login' in st.session_state:
                     "OUTPUT": output,
                     "DURASI": durasi
                 })
-                st.toast("✅ Berhasil ditambahkan!")
+                st.toast("Tersimpan!")
             except:
-                st.error("Format waktu salah! Gunakan HH.MM (Contoh: 07.45)")
+                st.error("Gunakan format HH.MM")
 
-    # --- 4. TAMPILAN PRATINJAU / CETAK ---
+    # --- 4. TAMPILAN PRATINJAU (RENDER HTML) ---
     if 'entries' in st.session_state and len(st.session_state.entries) > 0:
         st.divider()
         st.subheader("📄 Pratinjau Dokumen")
@@ -134,7 +126,7 @@ if 'user_login' in st.session_state:
             </table>
             <table border="1" style="width:100%; border-collapse: collapse; text-align:center;">
                 <tr>
-                    <th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI AKTIVITAS<br>(MENIT)</th>
+                    <th>NO</th><th>WAKTU</th><th>AKTIVITAS</th><th>OUTPUT</th><th>DURASI AKTIVITAS (MENIT)</th>
                 </tr>
         """
         for i, row in enumerate(st.session_state.entries):
@@ -158,7 +150,7 @@ if 'user_login' in st.session_state:
             </div>
         </div>
         """
+        # INI BAGIAN PALING PENTING AGAR TIDAK MUNCUL KODE
         st.markdown(html_doc, unsafe_allow_html=True)
         
-        # Tombol download csv sebagai cadangan
-        st.download_button("📥 Download Data (CSV)", df_view.to_csv(index=False), "LKH_Rekap.csv")
+        st.caption("Gunakan fitur 'Print' di browser (Ctrl+P) untuk menyimpan sebagai PDF.")
