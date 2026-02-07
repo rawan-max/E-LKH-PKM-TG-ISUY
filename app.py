@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import io
 
 # =======================
 # Page Config & CSS
@@ -83,7 +84,6 @@ if 'user' not in st.session_state:
             "atasan": "dr. Irana Priska",
             "nip_atasan": "19880929 201503 2 007"
         }
-        st.experimental_rerun_flag = True  # Flag untuk refresh konten
         st.success(f"Login berhasil, selamat datang {nama_user}!")
 
 st.session_state.setdefault('data_lkh', [])
@@ -100,8 +100,8 @@ if 'user' in st.session_state:
         menu = st.radio("Menu:", ["📝 Input Harian", "📊 Rekap Bulanan"])
         if st.button("Keluar"):
             st.session_state.clear()
-            st.experimental_rerun_flag = True
             st.success("Berhasil logout!")
+            st.stop()
 
     # =======================
     # Input Harian
@@ -139,9 +139,15 @@ if 'user' in st.session_state:
             st.subheader("📄 LKH Harian")
             df_lkh = pd.DataFrame(st.session_state.data_lkh)
             st.dataframe(df_lkh)
+
+            # Download Excel dengan BytesIO
+            towrite = io.BytesIO()
+            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
+                df_lkh.to_excel(writer, index=False, sheet_name="LKH_Harian")
+            towrite.seek(0)
             st.download_button(
                 "⬇️ Download LKH Harian (Excel)",
-                df_lkh.to_excel(index=False),
+                towrite,
                 file_name=f"LKH_Harian_{u['nama']}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
@@ -167,9 +173,14 @@ if 'user' in st.session_state:
             st.dataframe(rekap)
             st.markdown(f"**Total Capaian:** {total_capaian} menit / {total_target} menit ({persen:.2f}%)")
 
+            # Download Excel dengan BytesIO
+            towrite2 = io.BytesIO()
+            with pd.ExcelWriter(towrite2, engine='xlsxwriter') as writer:
+                rekap.to_excel(writer, index=False, sheet_name="Rekap_Bulanan")
+            towrite2.seek(0)
             st.download_button(
                 "⬇️ Download Rekap Bulanan (Excel)",
-                rekap.to_excel(index=False),
+                towrite2,
                 file_name=f"Rekap_Bulanan_{u['nama']}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
