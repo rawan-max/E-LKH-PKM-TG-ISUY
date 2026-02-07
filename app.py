@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import tempfile
-import pdfkit
 
 # =======================
 # Page Config & CSS
@@ -16,7 +14,6 @@ st.markdown("""
 .report-box {border:1px solid #ccc; padding:15px; background:white; color:black; font-family:Arial, sans-serif;}
 table {width:100%; border-collapse: collapse;}
 th, td {border:1px solid black; padding:5px; font-size:12px;}
-@media print {.no-print {display:none !important;} .report-box {border:none; padding:0;} th, td {font-size:11px;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,25 +27,13 @@ BULAN_ID = {1: "JANUARI",2: "FEBRUARI",3: "MARET",4: "APRIL",
             9: "SEPTEMBER",10: "OKTOBER",11: "NOVEMBER",12: "DESEMBER"}
 
 # =======================
-# Helper Functions
+# Helper
 # =======================
 def parse_jam(jam_str):
     jam_str = jam_str.replace(".", ":").strip()
     if len(jam_str.split(":")[0]) == 1:
         jam_str = "0" + jam_str
     return datetime.strptime(jam_str, "%H:%M")
-
-def export_pdf(html_content, filename="lkh.pdf"):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
-        pdfkit.from_string(html_content, tmpfile.name)
-        tmpfile.flush()
-        with open(tmpfile.name, "rb") as f:
-            st.download_button(
-                label="⬇️ Simpan PDF",
-                data=f,
-                file_name=filename,
-                mime="application/pdf"
-            )
 
 # =======================
 # Upload Data Pegawai
@@ -149,69 +134,17 @@ if 'user' in st.session_state:
                 except:
                     st.error("Format jam salah. Gunakan 08.00 atau 08:00")
 
-        # =======================
-        # Tabel Harian
-        # =======================
+        # Tabel Harian & Export Excel
         if st.session_state.data_lkh:
             st.subheader("📄 LKH Harian")
             df_lkh = pd.DataFrame(st.session_state.data_lkh)
-            for idx, row in df_lkh.iterrows():
-                st.markdown(f"**{idx+1}. {row['tgl']} ({row['hari']})**")
-                c1, c2 = st.columns([3,1])
-                with c1:
-                    st.write(f"Jam: {row['jam']}")
-                    st.write(f"Kegiatan: {row['ket']}")
-                    st.write(f"Output: {row['out']}")
-                    st.write(f"Durasi: {row['durasi']} menit")
-                with c2:
-                    if st.button("✏️ Edit", key=f"edit{idx}"):
-                        st.session_state.edit_index = idx
-                    if st.button("🗑 Hapus", key=f"hapus{idx}"):
-                        st.session_state.data_lkh.pop(idx)
-                        st.toast("Data dihapus ✅")
-                        st.experimental_rerun()
-
-            # Popup Edit
-            if 'edit_index' in st.session_state:
-                idx = st.session_state.edit_index
-                edit_row = st.session_state.data_lkh[idx]
-                st.markdown("---")
-                st.subheader(f"✏️ Edit Aktivitas {idx+1}")
-                tgl_edit = st.date_input("Tanggal", datetime.strptime(edit_row['tgl'], "%Y-%m-%d"), key="tgl_edit")
-                jam_mulai_edit = st.text_input("Jam Mulai", edit_row['jam'].split(" - ")[0], key="jm_edit")
-                jam_selesai_edit = st.text_input("Jam Selesai", edit_row['jam'].split(" - ")[1], key="js_edit")
-                uraian_edit = st.text_area("Uraian Kegiatan", edit_row['ket'], key="uraian_edit")
-                output_edit = st.text_input("Output / Hasil", edit_row['out'], key="out_edit")
-                if st.button("💾 Simpan Perubahan"):
-                    try:
-                        t1 = parse_jam(jam_mulai_edit)
-                        t2 = parse_jam(jam_selesai_edit)
-                        if t2 <= t1:
-                            st.error("Jam selesai harus lebih besar dari jam mulai")
-                        else:
-                            durasi = int((t2-t1).total_seconds()/60)
-                            st.session_state.data_lkh[idx] = {
-                                "tgl": tgl_edit.strftime("%Y-%m-%d"),
-                                "hari": HARI_ID[tgl_edit.strftime("%A")],
-                                "jam": f"{jam_mulai_edit} - {jam_selesai_edit}",
-                                "ket": uraian_edit,
-                                "out": output_edit,
-                                "durasi": durasi
-                            }
-                            st.toast("Data diperbarui ✅")
-                            st.session_state.pop('edit_index')
-                            st.experimental_rerun()
-                    except:
-                        st.error("Format jam salah. Gunakan 08.00 atau 08:00")
-
-            # =======================
-            # Export PDF Harian
-            # =======================
-            html_harian = "<h2>Laporan Harian</h2><table border=1><tr><th>No</th><th>Tanggal</th><th>Jam</th><th>Kegiatan</th><th>Output</th><th>Durasi</th></tr>"
-            for i, r in enumerate(st.session_state.data_lkh):
-                html_harian += f"<tr><td>{i+1}</td><td>{r['tgl']}</td><td>{r['jam']}</td><td>{r['ket']}</td><td>{r['out']}</td><td>{r['durasi']}</td></tr>"
-            html_harian += "</table>"
-            export_pdf(html_harian, filename=f"LKH_Harian_{u['nama']}.pdf")
+            st.dataframe(df_lkh)
+            st.download_button(
+                "⬇️ Download LKH Harian (Excel)",
+                df_lkh.to_excel(index=False),
+                file_name=f"LKH_Harian_{u['nama']}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     # =======================
     # Rekap Bulanan
@@ -234,9 +167,9 @@ if 'user' in st.session_state:
             st.dataframe(rekap)
             st.markdown(f"**Total Capaian:** {total_capaian} menit / {total_target} menit ({persen:.2f}%)")
 
-            # Export PDF Bulanan
-            html_bulanan = "<h2>Rekap Bulanan</h2><table border=1><tr><th>No</th><th>Tanggal</th><th>Durasi</th><th>Target</th></tr>"
-            for i, r in enumerate(rekap.itertuples()):
-                html_bulanan += f"<tr><td>{i+1}</td><td>{r.tgl.strftime('%Y-%m-%d')}</td><td>{r.durasi}</td><td>{TARGET_HARIAN}</td></tr>"
-            html_bulanan += f"<tr><td colspan=2>Total</td><td>{total_capaian}</td><td>{total_target}</td></tr></table>"
-            export_pdf(html_bulanan, filename=f"Rekap_Bulanan_{u['nama']}.pdf")
+            st.download_button(
+                "⬇️ Download Rekap Bulanan (Excel)",
+                rekap.to_excel(index=False),
+                file_name=f"Rekap_Bulanan_{u['nama']}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
