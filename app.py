@@ -28,7 +28,7 @@ BULAN_ID = {
 }
 
 # ------------------------------
-# FUNGSIONALITAS UTAMA
+# FUNGSIONALITAS
 # ------------------------------
 def parse_jam(jam_str):
     """Ubah format jam fleksibel menjadi datetime"""
@@ -58,24 +58,24 @@ if st.session_state.master_data is None:
     if file:
         try:
             df = pd.read_excel(file)
-            df.columns = [str(c).upper().strip() for c in df.columns]
+            # Bersihkan nama kolom: strip spasi & upper
+            df.columns = [str(c).strip().upper() for c in df.columns]
             st.session_state.master_data = df
             st.rerun()
         except Exception as e:
             st.error(f"Gagal membaca file: {e}")
     st.stop()
 
-# Pastikan master_data ada
 df = st.session_state.master_data
 
 # ------------------------------
-# 2. LOGIN HANYA DENGAN NAMA
+# 2. LOGIN NAMA PEGAWAI
 # ------------------------------
 if "user" not in st.session_state:
     st.title("🔐 Login E-LKH")
     
     # Cari kolom nama
-    col_nama = next((c for c in df.columns if "NAMA" in c.upper()), None)
+    col_nama = next((c for c in df.columns if "NAMA" in c), None)
     if col_nama is None:
         st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
         st.code("\n".join(df.columns))
