@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 # ------------------------------
-# KONFIGURASI HALAMAN STREAMLIT
+# KONFIGURASI HALAMAN
 # ------------------------------
 st.set_page_config(
     page_title="E-LKH Mobile",
@@ -14,11 +14,13 @@ st.set_page_config(
 
 DATA_FILE = "data_lkh.csv"
 
-# Kamus hari & bulan Indonesia
+# ------------------------------
+# KAMUS HARI & BULAN
+# ------------------------------
 HARI_ID = {
-    "Monday":"Senin","Tuesday":"Selasa","Wednesday":"Rabu",
-    "Thursday":"Kamis","Friday":"Jumat",
-    "Saturday":"Sabtu","Sunday":"Minggu"
+    "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
+    "Thursday": "Kamis", "Friday": "Jumat",
+    "Saturday": "Sabtu", "Sunday": "Minggu"
 }
 BULAN_ID = {
     1:"JANUARI",2:"FEBRUARI",3:"MARET",4:"APRIL",5:"MEI",6:"JUNI",
@@ -127,4 +129,60 @@ if menu == "📝 Input Harian":
                 st.error("Jam selesai harus lebih besar dari jam mulai")
                 st.stop()
 
-            durasi = int((t2 - t1
+            durasi = int((t2 - t1).total_seconds() / 60)
+
+            if "data_lkh" not in st.session_state:
+                st.session_state.data_lkh = []
+
+            st.session_state.data_lkh.append({
+                "obj_date": tgl,
+                "hari": HARI_ID[tgl.strftime("%A")],
+                "jam": f"{jam_mulai} - {jam_selesai}",
+                "ket": kegiatan,
+                "out": output,
+                "durasi": durasi
+            })
+
+            save_data(st.session_state.data_lkh)
+            st.toast("Data tersimpan ✅")
+            st.rerun()
+        except:
+            st.error("Format jam salah. Gunakan 08.00 atau 08:00")
+
+    st.markdown("---")
+    for i, d in enumerate(st.session_state.data_lkh):
+        c1, c2 = st.columns([9,1])
+        c1.markdown(f"**{d['jam']}**  \n{d['ket']}  \n⏱ {d['durasi']} menit")
+        if c2.button("🗑️", key=f"del{i}"):
+            st.session_state.data_lkh.pop(i)
+            save_data(st.session_state.data_lkh)
+            st.rerun()
+
+# ------------------------------
+# 5. REKAP BULANAN
+# ------------------------------
+else:
+    st.header("📊 Rekap Bulanan")
+
+    if "data_lkh" not in st.session_state or not st.session_state.data_lkh:
+        st.info("Belum ada data. Silakan input kegiatan di menu 'Input Harian' dulu.")
+        st.stop()
+
+    df_raw = pd.DataFrame(st.session_state.data_lkh)
+    df_raw["obj_date"] = pd.to_datetime(df_raw["obj_date"])
+
+    bulan = st.selectbox(
+        "Pilih Bulan",
+        sorted(df_raw["obj_date"].dt.month.unique()),
+        format_func=lambda x: BULAN_ID[x]
+    )
+
+    df_bln = df_raw[df_raw["obj_date"].dt.month == bulan]
+    rekap = df_bln.groupby("obj_date")["durasi"].sum().reset_index()
+
+    TARGET = 270
+    total = rekap["durasi"].sum()
+    persen = total / (len(rekap) * TARGET) * 100 if len(rekap) else 0
+
+    st.dataframe(rekap, use_container_width=True)
+    st.success(f"Total: {total} menit | Capaian: {persen:.2f}%")
