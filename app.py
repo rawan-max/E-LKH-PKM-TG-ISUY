@@ -64,75 +64,42 @@ if st.session_state.master_data is None:
     st.stop()
 
 # Pastikan master_data ada
-if st.session_state.master_data is not None:
-    df = st.session_state.master_data
-else:
-    st.error("Master data belum tersedia")
-    st.stop()
+df = st.session_state.master_data
 
 # ------------------------------
-# CARI KOLM NAMA & NIP
-# ------------------------------
-KEYWORDS_NAMA = ["NAMA", "NAME", "PEGAWAI"]
-KEYWORDS_NIP  = ["NIP", "NIK", "NO"]
-
-col_nama = next((c for c in df.columns if any(k in c for k in KEYWORDS_NAMA)), None)
-col_nip  = next((c for c in df.columns if any(k in c for k in KEYWORDS_NIP)), None)
-
-if col_nama is None:
-    st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
-    st.code("\n".join(df.columns))
-    st.stop()
-
-# ------------------------------
-# 2. LOGIN
+# 2. LOGIN HANYA DENGAN NAMA
 # ------------------------------
 if "user" not in st.session_state:
     st.title("🔐 Login E-LKH")
+    
+    # Cari kolom nama
+    col_nama = next((c for c in df.columns if "NAMA" in c.upper()), None)
+    if col_nama is None:
+        st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
+        st.code("\n".join(df.columns))
+        st.stop()
 
-    nama_list = (
-        df[col_nama]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-    )
-
-    nama = st.selectbox(
-        "Pilih Nama",
-        ["-- Pilih --"] + sorted(nama_list)
-    )
+    nama_list = df[col_nama].dropna().astype(str).str.strip().unique()
+    nama = st.selectbox("Pilih Nama Anda", ["-- Pilih --"] + sorted(nama_list))
 
     if st.button("Masuk") and nama != "-- Pilih --":
         row = df[df[col_nama].astype(str).str.strip() == nama].iloc[0]
-
-        nip = "-"
-        if col_nip:
-            nip = str(row[col_nip]).replace(".0", "").strip()
-
         st.session_state.user = {
             "nama": nama,
-            "nip": nip,
             "jabatan": row.get("JABATAN", "Pegawai")
         }
-
         st.session_state.data_lkh = load_data()
         st.rerun()
 
-    st.stop()   # ⬅️ stop sebelum dashboard
+    st.stop()  # hentikan sebelum dashboard
 
 # ------------------------------
 # 3. DASHBOARD
 # ------------------------------
-# Pastikan user ada di session_state
-if "user" in st.session_state:
-    u = st.session_state.user
-else:
-    st.error("User belum login")
-    st.stop()
+u = st.session_state.user
 
 with st.sidebar:
-    st.success(u.get("nama", ""))
+    st.success(f"👤 {u['nama']}")
     menu = st.radio("Menu", ["📝 Input Harian", "📊 Rekap Bulanan"])
     if st.button("Keluar"):
         st.session_state.clear()
@@ -160,61 +127,4 @@ if menu == "📝 Input Harian":
                 st.error("Jam selesai harus lebih besar dari jam mulai")
                 st.stop()
 
-            durasi = int((t2 - t1).total_seconds() / 60)
-
-            if "data_lkh" not in st.session_state:
-                st.session_state.data_lkh = []
-
-            st.session_state.data_lkh.append({
-                "obj_date": tgl,
-                "hari": HARI_ID[tgl.strftime("%A")],
-                "jam": f"{jam_mulai} - {jam_selesai}",
-                "ket": kegiatan,
-                "out": output,
-                "durasi": durasi
-            })
-
-            save_data(st.session_state.data_lkh)
-            st.toast("Data tersimpan ✅")
-            st.rerun()
-        except:
-            st.error("Format jam salah. Gunakan 08.00 atau 08:00")
-
-    st.markdown("---")
-    # Tampilkan preview
-    for i, d in enumerate(st.session_state.data_lkh):
-        c1, c2 = st.columns([9,1])
-        c1.markdown(f"**{d['jam']}**  \n{d['ket']}  \n⏱ {d['durasi']} menit")
-        if c2.button("🗑️", key=f"del{i}"):
-            st.session_state.data_lkh.pop(i)
-            save_data(st.session_state.data_lkh)
-            st.rerun()
-
-# ------------------------------
-# 5. REKAP BULANAN
-# ------------------------------
-else:
-    st.header("📊 Rekap Bulanan")
-
-    if "data_lkh" not in st.session_state or not st.session_state.data_lkh:
-        st.info("Belum ada data. Silakan input kegiatan di menu 'Input Harian' dulu.")
-        st.stop()
-
-    df_raw = pd.DataFrame(st.session_state.data_lkh)
-    df_raw["obj_date"] = pd.to_datetime(df_raw["obj_date"])
-
-    bulan = st.selectbox(
-        "Pilih Bulan",
-        sorted(df_raw["obj_date"].dt.month.unique()),
-        format_func=lambda x: BULAN_ID[x]
-    )
-
-    df_bln = df_raw[df_raw["obj_date"].dt.month == bulan]
-    rekap = df_bln.groupby("obj_date")["durasi"].sum().reset_index()
-
-    TARGET = 270
-    total = rekap["durasi"].sum()
-    persen = total / (len(rekap) * TARGET) * 100 if len(rekap) else 0
-
-    st.dataframe(rekap, use_container_width=True)
-    st.success(f"Total: {total} menit | Capaian: {persen:.2f}%")
+            durasi = int((t2 - t1
