@@ -1,186 +1,194 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import io
 
-# =======================
-# Page Config & CSS
-# =======================
-st.set_page_config(page_title="E-LKH Mobile", layout="centered")
 
-st.markdown("""
-<style>
-.stTextInput input, .stTextArea textarea, .stSelectbox, .stDateInput {font-size:16px !important; padding:10px !important;}
-.stButton button {width:100%; background-color:#FF4B4B; color:white; height:55px; font-weight:bold; border-radius:8px;}
-.report-box {border:1px solid #ccc; padding:15px; background:white; color:black; font-family:Arial, sans-serif;}
-table {width:100%; border-collapse: collapse;}
-th, td {border:1px solid black; padding:5px; font-size:12px;}
-</style>
-""", unsafe_allow_html=True)
+import React, { useState, useEffect } from 'react';
+import type { DailyReport, Activity, UserProfile } from '../types';
+// FIX: Use submodule imports for date-fns to fix export errors.
+import { format, differenceInMinutes } from 'date-fns';
+import parseISO from 'date-fns/parseISO';
+import parse from 'date-fns/parse';
+import id from 'date-fns/locale/id';
 
-# =======================
-# Kamus Hari & Bulan
-# =======================
-HARI_ID = {"Monday": "Senin","Tuesday": "Selasa","Wednesday": "Rabu",
-           "Thursday": "Kamis","Friday": "Jumat","Saturday": "Sabtu","Sunday": "Minggu"}
-BULAN_ID = {1: "JANUARI",2: "FEBRUARI",3: "MARET",4: "APRIL",
-            5: "MEI",6: "JUNI",7: "JULI",8: "AGUSTUS",
-            9: "SEPTEMBER",10: "OKTOBER",11: "NOVEMBER",12: "DESEMBER"}
+interface DailyReportModalProps {
+    date: Date;
+    report?: DailyReport;
+    onClose: () => void;
+    onSave: (date: Date, activities: Activity[]) => void;
+    userProfile: UserProfile;
+}
 
-# =======================
-# Helper
-# =======================
-def parse_jam(jam_str):
-    jam_str = jam_str.replace(".", ":").strip()
-    if len(jam_str.split(":")[0]) == 1:
-        jam_str = "0" + jam_str
-    return datetime.strptime(jam_str, "%H:%M")
+const DailyReportModal: React.FC<DailyReportModalProps> = ({ date, report, onClose, onSave, userProfile }) => {
+    const [activities, setActivities] = useState<Activity[]>([]);
+    const [newActivity, setNewActivity] = useState({
+        startTime: '07:45',
+        endTime: '08:30',
+        description: '',
+        output: '1 Kegiatan'
+    });
 
-# =======================
-# Upload Data Pegawai
-# =======================
-if 'master_data' not in st.session_state:
-    st.session_state.master_data = None
-
-if st.session_state.master_data is None:
-    st.title("📂 Setup Data Pegawai")
-    uploaded_file = st.file_uploader("Upload File Excel Pegawai", type=['xlsx'])
-    if uploaded_file:
-        try:
-            df = pd.read_excel(uploaded_file)
-            df.columns = [str(c).upper().strip() for c in df.columns]
-            if not any("NAMA" in c for c in df.columns):
-                st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
-            else:
-                st.session_state.master_data = df
-                st.success("File berhasil diupload ✅")
-        except Exception as e:
-            st.error(f"Error file: {e}")
-    st.stop()
-
-# =======================
-# Login Pegawai
-# =======================
-df = st.session_state.master_data
-col_nama = next((c for c in df.columns if "NAMA" in c), None)
-
-if 'user' not in st.session_state:
-    st.title("🔐 Login E-LKH")
-    nama_user = st.selectbox("Pilih Nama Anda:", ["-- Pilih --"] + sorted(df[col_nama].dropna().unique()))
-    if st.button("Masuk Aplikasi") and nama_user != "-- Pilih --":
-        row = df[df[col_nama] == nama_user].iloc[0]
-        lbl_id, val_id = "NIP", "-"
-        for c in df.columns:
-            if "NIP" in c:
-                clean_val = str(row.get(c, "")).replace(".0","").strip()
-                if clean_val not in ["nan","-","","None"]:
-                    lbl_id, val_id = c, clean_val
-                    break
-        st.session_state.user = {
-            "nama": nama_user,
-            "label_id": lbl_id,
-            "no_id": val_id,
-            "jabatan": str(row.get('JABATAN','Pegawai')),
-            "atasan": "dr. Irana Priska",
-            "nip_atasan": "19880929 201503 2 007"
+    useEffect(() => {
+        if (report) {
+            setActivities(report.activities);
         }
-        st.success(f"Login berhasil, selamat datang {nama_user}!")
+    }, [report]);
 
-st.session_state.setdefault('data_lkh', [])
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setNewActivity(prev => ({ ...prev, [name]: value }));
+    };
 
-# =======================
-# Dashboard
-# =======================
-if 'user' in st.session_state:
-    u = st.session_state.user
+    const handleAddActivity = () => {
+        if (!newActivity.description.trim()) {
+            alert('Deskripsi aktivitas tidak boleh kosong.');
+            return;
+        }
 
-    with st.sidebar:
-        st.success(f"👤 {u['nama']}")
-        st.caption(f"{u['label_id']}: {u['no_id']}")
-        menu = st.radio("Menu:", ["📝 Input Harian", "📊 Rekap Bulanan"])
-        if st.button("Keluar"):
-            st.session_state.clear()
-            st.success("Berhasil logout!")
-            st.stop()
-
-    # =======================
-    # Input Harian
-    # =======================
-    if menu == "📝 Input Harian":
-        st.header("📝 Input Aktivitas")
-        with st.form("form_aktivitas"):
-            tgl_input = st.date_input("Tanggal", datetime.now())
-            jam_mulai = st.text_input("Jam Mulai", "08.00")
-            jam_selesai = st.text_input("Jam Selesai", "14.00")
-            uraian = st.text_area("Uraian Kegiatan", height=100)
-            output = st.text_input("Output / Hasil", "1 Kegiatan")
-            submitted = st.form_submit_button("💾 Tambah Aktivitas")
-            if submitted:
-                try:
-                    t1 = parse_jam(jam_mulai)
-                    t2 = parse_jam(jam_selesai)
-                    if t2 <= t1:
-                        st.error("Jam selesai harus lebih besar dari jam mulai")
-                    else:
-                        durasi = int((t2-t1).total_seconds()/60)
-                        st.session_state.data_lkh.append({
-                            "tgl": tgl_input.strftime("%Y-%m-%d"),
-                            "hari": HARI_ID[tgl_input.strftime("%A")],
-                            "jam": f"{jam_mulai} - {jam_selesai}",
-                            "ket": uraian,
-                            "out": output,
-                            "durasi": durasi
-                        })
-                        st.success("Data tersimpan ✅")
-                except:
-                    st.error("Format jam salah. Gunakan 08.00 atau 08:00")
-
-        if st.session_state.data_lkh:
-            st.subheader("📄 LKH Harian")
-            df_lkh = pd.DataFrame(st.session_state.data_lkh)
-            st.dataframe(df_lkh)
-
-            # Download Excel dengan BytesIO
-            towrite = io.BytesIO()
-            with pd.ExcelWriter(towrite, engine='xlsxwriter') as writer:
-                df_lkh.to_excel(writer, index=False, sheet_name="LKH_Harian")
-            towrite.seek(0)
-            st.download_button(
-                "⬇️ Download LKH Harian (Excel)",
-                towrite,
-                file_name=f"LKH_Harian_{u['nama']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-    # =======================
-    # Rekap Bulanan
-    # =======================
-    elif menu == "📊 Rekap Bulanan":
-        st.header("📊 Rekap Bulanan")
-        if not st.session_state.data_lkh:
-            st.info("⚠️ Belum ada data")
-        else:
-            df_raw = pd.DataFrame(st.session_state.data_lkh)
-            df_raw['tgl'] = pd.to_datetime(df_raw['tgl'])
-            rekap = df_raw.groupby('tgl').agg({'durasi':'sum'}).reset_index().sort_values('tgl')
-            TARGET_HARIAN = 270
-            total_capaian = rekap['durasi'].sum()
-            total_target = len(rekap)*TARGET_HARIAN
-            persen = (total_capaian/total_target*100) if total_target>0 else 0
-            bulan_laporan = BULAN_ID.get(rekap.iloc[0]['tgl'].month,"BULAN INI")
+        try {
+            const startDate = parse(newActivity.startTime, 'HH:mm', date);
+            const endDate = parse(newActivity.endTime, 'HH:mm', date);
             
-            st.markdown(f"**Bulan:** {bulan_laporan}")
-            st.dataframe(rekap)
-            st.markdown(f"**Total Capaian:** {total_capaian} menit / {total_target} menit ({persen:.2f}%)")
+            if (endDate <= startDate) {
+                alert('Waktu selesai harus setelah waktu mulai.');
+                return;
+            }
 
-            # Download Excel dengan BytesIO
-            towrite2 = io.BytesIO()
-            with pd.ExcelWriter(towrite2, engine='xlsxwriter') as writer:
-                rekap.to_excel(writer, index=False, sheet_name="Rekap_Bulanan")
-            towrite2.seek(0)
-            st.download_button(
-                "⬇️ Download Rekap Bulanan (Excel)",
-                towrite2,
-                file_name=f"Rekap_Bulanan_{u['nama']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            const duration = differenceInMinutes(endDate, startDate);
+
+            const activityToAdd: Activity = {
+                id: crypto.randomUUID(),
+                ...newActivity,
+                duration
+            };
+            setActivities(prev => [...prev, activityToAdd]);
+            setNewActivity({ startTime: newActivity.endTime, endTime: '', description: '', output: '1 Kegiatan' });
+        } catch(e) {
+            alert("Format waktu tidak valid. Gunakan HH:mm.");
+        }
+    };
+    
+    const handleDeleteActivity = (id: string) => {
+        setActivities(prev => prev.filter(act => act.id !== id));
+    };
+
+    const handleSaveReport = () => {
+        onSave(date, activities);
+    };
+    
+    const handlePrint = () => {
+        const printContents = document.getElementById('daily-report-printable')?.innerHTML;
+        const originalContents = document.body.innerHTML;
+        if (printContents) {
+            document.body.innerHTML = printContents;
+            window.print();
+            document.body.innerHTML = originalContents;
+            // Re-mount the app to restore functionality after printing
+            window.location.reload();
+        }
+    };
+
+    const totalDuration = activities.reduce((sum, act) => sum + act.duration, 0);
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-start pt-10 z-20 overflow-auto no-print">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl p-8 m-4">
+                <div id="daily-report-printable">
+                    <div className="text-center mb-6">
+                        <h2 className="text-xl font-bold uppercase">Laporan Kerja Harian</h2>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm mb-6">
+                        <div className="flex"><span className="w-28">BULAN</span>: <span className="uppercase">{format(date, 'MMMM', { locale: id })}</span></div>
+                        <div className="flex"><span className="w-28">NAMA</span>: {userProfile.name}</div>
+                        <div className="flex"><span className="w-28">HARI</span>: {format(date, 'EEEE', { locale: id })}</div>
+                        <div className="flex"><span className="w-28">NIP</span>: {userProfile.nip}</div>
+                        <div className="flex"><span className="w-28">TANGGAL</span>: {format(date, 'd', { locale: id })}</div>
+                        <div className="flex"><span className="w-28">JABATAN</span>: {userProfile.position}</div>
+                        <div></div>
+                        <div className="flex"><span className="w-28">UNIT KERJA</span>: {userProfile.unit}</div>
+                    </div>
+                    
+                    {/* Display Activities */}
+                    <table className="w-full border-collapse border border-black text-sm">
+                        <thead className="bg-gray-200 text-center font-bold">
+                            <tr>
+                                <td className="border border-black p-2 w-12">NO</td>
+                                <td className="border border-black p-2 w-48">WAKTU</td>
+                                <td className="border border-black p-2">AKTIVITAS</td>
+                                <td className="border border-black p-2 w-32">OUTPUT</td>
+                                <td className="border border-black p-2 w-32">DURASI (MENIT)</td>
+                                <td className="border border-black p-2 w-16 no-print">AKSI</td>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {activities.map((act, index) => (
+                                <tr key={act.id}>
+                                    <td className="border border-black p-2 text-center">{index + 1}</td>
+                                    <td className="border border-black p-2 text-center">{act.startTime} - {act.endTime}</td>
+                                    <td className="border border-black p-2">{act.description}</td>
+                                    <td className="border border-black p-2 text-center">{act.output}</td>
+                                    <td className="border border-black p-2 text-center">{act.duration}</td>
+                                    <td className="border border-black p-2 text-center no-print">
+                                        <button onClick={() => handleDeleteActivity(act.id)} className="text-red-500 hover:text-red-700">&times;</button>
+                                    </td>
+                                </tr>
+                            ))}
+                            <tr className="font-bold">
+                                <td colSpan={4} className="border border-black p-2 text-center">JUMLAH</td>
+                                <td className="border border-black p-2 text-center">{totalDuration}</td>
+                                <td className="border border-black no-print"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                     <div className="mt-12 grid grid-cols-2 gap-8 text-center text-sm">
+                        <div>
+                            <p>Menyetujui</p>
+                            <p>Pejabat Penilai/ Atasan Langsung</p>
+                            <div className="h-24"></div>
+                            <p className="font-bold underline">{userProfile.supervisorName}</p>
+                            <p>NIP. {userProfile.supervisorNip}</p>
+                        </div>
+                        <div>
+                            <p className="invisible">.</p>
+                             <p>{userProfile.position}</p>
+                            <div className="h-24"></div>
+                            <p className="font-bold underline">{userProfile.name}</p>
+                            <p>NIP. {userProfile.nip}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Form to Add New Activity */}
+                <div className="mt-8 pt-6 border-t no-print">
+                     <h3 className="text-lg font-semibold mb-3">Tambah Aktivitas Baru</h3>
+                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                        <div className="col-span-2 grid grid-cols-2 gap-2">
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700">Mulai</label>
+                                <input type="time" name="startTime" value={newActivity.startTime} onChange={handleInputChange} className="mt-1 w-full p-2 border rounded"/>
+                             </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Selesai</label>
+                                <input type="time" name="endTime" value={newActivity.endTime} onChange={handleInputChange} className="mt-1 w-full p-2 border rounded"/>
+                             </div>
+                        </div>
+                        <div className="col-span-2">
+                             <label className="block text-sm font-medium text-gray-700">Deskripsi Aktivitas</label>
+                            <input name="description" value={newActivity.description} onChange={handleInputChange} className="mt-1 w-full p-2 border rounded"/>
+                        </div>
+                        <div>
+                            <button onClick={handleAddActivity} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Tambah</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-8 flex justify-end space-x-3 no-print">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Tutup</button>
+                    <button onClick={handlePrint} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Cetak Harian</button>
+                    <button onClick={handleSaveReport} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Simpan & Tutup</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default DailyReportModal;
