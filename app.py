@@ -52,7 +52,7 @@ if st.session_state.master_data is None:
                 st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
             else:
                 st.session_state.master_data = df
-                st.experimental_rerun()
+                st.success("File berhasil diupload ✅")
         except Exception as e:
             st.error(f"Error file: {e}")
     st.stop()
@@ -83,23 +83,25 @@ if 'user' not in st.session_state:
             "atasan": "dr. Irana Priska",
             "nip_atasan": "19880929 201503 2 007"
         }
-        st.experimental_rerun()
+        st.experimental_rerun_flag = True  # Flag untuk refresh konten
+        st.success(f"Login berhasil, selamat datang {nama_user}!")
+
+st.session_state.setdefault('data_lkh', [])
 
 # =======================
 # Dashboard
 # =======================
 if 'user' in st.session_state:
     u = st.session_state.user
+
     with st.sidebar:
         st.success(f"👤 {u['nama']}")
         st.caption(f"{u['label_id']}: {u['no_id']}")
         menu = st.radio("Menu:", ["📝 Input Harian", "📊 Rekap Bulanan"])
         if st.button("Keluar"):
             st.session_state.clear()
-            st.experimental_rerun()
-
-    if 'data_lkh' not in st.session_state:
-        st.session_state.data_lkh = []
+            st.experimental_rerun_flag = True
+            st.success("Berhasil logout!")
 
     # =======================
     # Input Harian
@@ -129,12 +131,10 @@ if 'user' in st.session_state:
                             "out": output,
                             "durasi": durasi
                         })
-                        st.toast("Data tersimpan ✅")
-                        st.experimental_rerun()
+                        st.success("Data tersimpan ✅")
                 except:
                     st.error("Format jam salah. Gunakan 08.00 atau 08:00")
 
-        # Tabel Harian & Export Excel
         if st.session_state.data_lkh:
             st.subheader("📄 LKH Harian")
             df_lkh = pd.DataFrame(st.session_state.data_lkh)
