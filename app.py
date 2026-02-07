@@ -1,188 +1,242 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
+import tempfile
+import pdfkit
 
-# ------------------------------
-# KONFIGURASI HALAMAN
-# ------------------------------
-st.set_page_config(
-    page_title="E-LKH Mobile",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+# =======================
+# Page Config & CSS
+# =======================
+st.set_page_config(page_title="E-LKH Mobile", layout="centered")
 
-DATA_FILE = "data_lkh.csv"
+st.markdown("""
+<style>
+.stTextInput input, .stTextArea textarea, .stSelectbox, .stDateInput {font-size:16px !important; padding:10px !important;}
+.stButton button {width:100%; background-color:#FF4B4B; color:white; height:55px; font-weight:bold; border-radius:8px;}
+.report-box {border:1px solid #ccc; padding:15px; background:white; color:black; font-family:Arial, sans-serif;}
+table {width:100%; border-collapse: collapse;}
+th, td {border:1px solid black; padding:5px; font-size:12px;}
+@media print {.no-print {display:none !important;} .report-box {border:none; padding:0;} th, td {font-size:11px;}}
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------------------
-# KAMUS HARI & BULAN
-# ------------------------------
-HARI_ID = {
-    "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
-    "Thursday": "Kamis", "Friday": "Jumat",
-    "Saturday": "Sabtu", "Sunday": "Minggu"
-}
-BULAN_ID = {
-    1:"JANUARI",2:"FEBRUARI",3:"MARET",4:"APRIL",5:"MEI",6:"JUNI",
-    7:"JULI",8:"AGUSTUS",9:"SEPTEMBER",10:"OKTOBER",11:"NOVEMBER",12:"DESEMBER"
-}
+# =======================
+# Kamus Hari & Bulan
+# =======================
+HARI_ID = {"Monday": "Senin","Tuesday": "Selasa","Wednesday": "Rabu",
+           "Thursday": "Kamis","Friday": "Jumat","Saturday": "Sabtu","Sunday": "Minggu"}
+BULAN_ID = {1: "JANUARI",2: "FEBRUARI",3: "MARET",4: "APRIL",
+            5: "MEI",6: "JUNI",7: "JULI",8: "AGUSTUS",
+            9: "SEPTEMBER",10: "OKTOBER",11: "NOVEMBER",12: "DESEMBER"}
 
-# ------------------------------
-# FUNGSIONALITAS
-# ------------------------------
+# =======================
+# Helper Functions
+# =======================
 def parse_jam(jam_str):
-    """Ubah format jam fleksibel menjadi datetime"""
     jam_str = jam_str.replace(".", ":").strip()
-    if ":" not in jam_str:
-        raise ValueError
-    jam, menit = jam_str.split(":")
-    return datetime.strptime(f"{jam.zfill(2)}:{menit.zfill(2)}", "%H:%M")
+    if len(jam_str.split(":")[0]) == 1:
+        jam_str = "0" + jam_str
+    return datetime.strptime(jam_str, "%H:%M")
 
-def save_data(data):
-    pd.DataFrame(data).to_csv(DATA_FILE, index=False)
+def export_pdf(html_content, filename="lkh.pdf"):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
+        pdfkit.from_string(html_content, tmpfile.name)
+        tmpfile.flush()
+        with open(tmpfile.name, "rb") as f:
+            st.download_button(
+                label="⬇️ Simpan PDF",
+                data=f,
+                file_name=filename,
+                mime="application/pdf"
+            )
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE, parse_dates=["obj_date"]).to_dict("records")
-    return []
-
-# ------------------------------
-# 1. UPLOAD MASTER DATA PEGAWAI
-# ------------------------------
-if "master_data" not in st.session_state:
+# =======================
+# Upload Data Pegawai
+# =======================
+if 'master_data' not in st.session_state:
     st.session_state.master_data = None
 
 if st.session_state.master_data is None:
     st.title("📂 Setup Data Pegawai")
-    file = st.file_uploader("Upload Excel Pegawai", type=["xlsx"])
-    if file:
+    uploaded_file = st.file_uploader("Upload File Excel Pegawai", type=['xlsx'])
+    if uploaded_file:
         try:
-            df = pd.read_excel(file)
-            # Bersihkan nama kolom: strip spasi & upper
-            df.columns = [str(c).strip().upper() for c in df.columns]
-            st.session_state.master_data = df
-            st.rerun()
+            df = pd.read_excel(uploaded_file)
+            df.columns = [str(c).upper().strip() for c in df.columns]
+            if not any("NAMA" in c for c in df.columns):
+                st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
+            else:
+                st.session_state.master_data = df
+                st.experimental_rerun()
         except Exception as e:
-            st.error(f"Gagal membaca file: {e}")
+            st.error(f"Error file: {e}")
     st.stop()
 
+# =======================
+# Login Pegawai
+# =======================
 df = st.session_state.master_data
+col_nama = next((c for c in df.columns if "NAMA" in c), None)
 
-# ------------------------------
-# 2. LOGIN NAMA PEGAWAI
-# ------------------------------
-if "user" not in st.session_state:
+if 'user' not in st.session_state:
     st.title("🔐 Login E-LKH")
-    
-    # Cari kolom nama
-    col_nama = next((c for c in df.columns if "NAMA" in c), None)
-    if col_nama is None:
-        st.error("Kolom NAMA PEGAWAI tidak ditemukan di Excel")
-        st.code("\n".join(df.columns))
-        st.stop()
-
-    nama_list = df[col_nama].dropna().astype(str).str.strip().unique()
-    nama = st.selectbox("Pilih Nama Anda", ["-- Pilih --"] + sorted(nama_list))
-
-    if st.button("Masuk") and nama != "-- Pilih --":
-        row = df[df[col_nama].astype(str).str.strip() == nama].iloc[0]
+    nama_user = st.selectbox("Pilih Nama Anda:", ["-- Pilih --"] + sorted(df[col_nama].dropna().unique()))
+    if st.button("Masuk Aplikasi") and nama_user != "-- Pilih --":
+        row = df[df[col_nama] == nama_user].iloc[0]
+        lbl_id, val_id = "NIP", "-"
+        for c in df.columns:
+            if "NIP" in c:
+                clean_val = str(row.get(c, "")).replace(".0","").strip()
+                if clean_val not in ["nan","-","","None"]:
+                    lbl_id, val_id = c, clean_val
+                    break
         st.session_state.user = {
-            "nama": nama,
-            "jabatan": row.get("JABATAN", "Pegawai")
+            "nama": nama_user,
+            "label_id": lbl_id,
+            "no_id": val_id,
+            "jabatan": str(row.get('JABATAN','Pegawai')),
+            "atasan": "dr. Irana Priska",
+            "nip_atasan": "19880929 201503 2 007"
         }
-        st.session_state.data_lkh = load_data()
-        st.rerun()
+        st.experimental_rerun()
 
-    st.stop()  # hentikan sebelum dashboard
+# =======================
+# Dashboard
+# =======================
+if 'user' in st.session_state:
+    u = st.session_state.user
+    with st.sidebar:
+        st.success(f"👤 {u['nama']}")
+        st.caption(f"{u['label_id']}: {u['no_id']}")
+        menu = st.radio("Menu:", ["📝 Input Harian", "📊 Rekap Bulanan"])
+        if st.button("Keluar"):
+            st.session_state.clear()
+            st.experimental_rerun()
 
-# ------------------------------
-# 3. DASHBOARD
-# ------------------------------
-u = st.session_state.user
+    if 'data_lkh' not in st.session_state:
+        st.session_state.data_lkh = []
 
-with st.sidebar:
-    st.success(f"👤 {u['nama']}")
-    menu = st.radio("Menu", ["📝 Input Harian", "📊 Rekap Bulanan"])
-    if st.button("Keluar"):
-        st.session_state.clear()
-        st.rerun()
+    # =======================
+    # Input Harian
+    # =======================
+    if menu == "📝 Input Harian":
+        st.header("📝 Input Aktivitas")
+        with st.form("form_aktivitas"):
+            tgl_input = st.date_input("Tanggal", datetime.now())
+            jam_mulai = st.text_input("Jam Mulai", "08.00")
+            jam_selesai = st.text_input("Jam Selesai", "14.00")
+            uraian = st.text_area("Uraian Kegiatan", height=100)
+            output = st.text_input("Output / Hasil", "1 Kegiatan")
+            submitted = st.form_submit_button("💾 Tambah Aktivitas")
+            if submitted:
+                try:
+                    t1 = parse_jam(jam_mulai)
+                    t2 = parse_jam(jam_selesai)
+                    if t2 <= t1:
+                        st.error("Jam selesai harus lebih besar dari jam mulai")
+                    else:
+                        durasi = int((t2-t1).total_seconds()/60)
+                        st.session_state.data_lkh.append({
+                            "tgl": tgl_input.strftime("%Y-%m-%d"),
+                            "hari": HARI_ID[tgl_input.strftime("%A")],
+                            "jam": f"{jam_mulai} - {jam_selesai}",
+                            "ket": uraian,
+                            "out": output,
+                            "durasi": durasi
+                        })
+                        st.toast("Data tersimpan ✅")
+                        st.experimental_rerun()
+                except:
+                    st.error("Format jam salah. Gunakan 08.00 atau 08:00")
 
-# ------------------------------
-# 4. INPUT HARIAN
-# ------------------------------
-if menu == "📝 Input Harian":
-    st.header("📝 Input Aktivitas")
+        # =======================
+        # Tabel Harian
+        # =======================
+        if st.session_state.data_lkh:
+            st.subheader("📄 LKH Harian")
+            df_lkh = pd.DataFrame(st.session_state.data_lkh)
+            for idx, row in df_lkh.iterrows():
+                st.markdown(f"**{idx+1}. {row['tgl']} ({row['hari']})**")
+                c1, c2 = st.columns([3,1])
+                with c1:
+                    st.write(f"Jam: {row['jam']}")
+                    st.write(f"Kegiatan: {row['ket']}")
+                    st.write(f"Output: {row['out']}")
+                    st.write(f"Durasi: {row['durasi']} menit")
+                with c2:
+                    if st.button("✏️ Edit", key=f"edit{idx}"):
+                        st.session_state.edit_index = idx
+                    if st.button("🗑 Hapus", key=f"hapus{idx}"):
+                        st.session_state.data_lkh.pop(idx)
+                        st.toast("Data dihapus ✅")
+                        st.experimental_rerun()
 
-    tgl = st.date_input("Tanggal", datetime.now())
-    c1, c2 = st.columns(2)
-    jam_mulai = c1.text_input("Jam Mulai", "08.00")
-    jam_selesai = c2.text_input("Jam Selesai", "14.00")
-    kegiatan = st.text_area("Uraian Kegiatan")
-    output = st.text_input("Output / Hasil", "1 Kegiatan")
+            # Popup Edit
+            if 'edit_index' in st.session_state:
+                idx = st.session_state.edit_index
+                edit_row = st.session_state.data_lkh[idx]
+                st.markdown("---")
+                st.subheader(f"✏️ Edit Aktivitas {idx+1}")
+                tgl_edit = st.date_input("Tanggal", datetime.strptime(edit_row['tgl'], "%Y-%m-%d"), key="tgl_edit")
+                jam_mulai_edit = st.text_input("Jam Mulai", edit_row['jam'].split(" - ")[0], key="jm_edit")
+                jam_selesai_edit = st.text_input("Jam Selesai", edit_row['jam'].split(" - ")[1], key="js_edit")
+                uraian_edit = st.text_area("Uraian Kegiatan", edit_row['ket'], key="uraian_edit")
+                output_edit = st.text_input("Output / Hasil", edit_row['out'], key="out_edit")
+                if st.button("💾 Simpan Perubahan"):
+                    try:
+                        t1 = parse_jam(jam_mulai_edit)
+                        t2 = parse_jam(jam_selesai_edit)
+                        if t2 <= t1:
+                            st.error("Jam selesai harus lebih besar dari jam mulai")
+                        else:
+                            durasi = int((t2-t1).total_seconds()/60)
+                            st.session_state.data_lkh[idx] = {
+                                "tgl": tgl_edit.strftime("%Y-%m-%d"),
+                                "hari": HARI_ID[tgl_edit.strftime("%A")],
+                                "jam": f"{jam_mulai_edit} - {jam_selesai_edit}",
+                                "ket": uraian_edit,
+                                "out": output_edit,
+                                "durasi": durasi
+                            }
+                            st.toast("Data diperbarui ✅")
+                            st.session_state.pop('edit_index')
+                            st.experimental_rerun()
+                    except:
+                        st.error("Format jam salah. Gunakan 08.00 atau 08:00")
 
-    if st.button("💾 Simpan"):
-        try:
-            t1 = parse_jam(jam_mulai)
-            t2 = parse_jam(jam_selesai)
+            # =======================
+            # Export PDF Harian
+            # =======================
+            html_harian = "<h2>Laporan Harian</h2><table border=1><tr><th>No</th><th>Tanggal</th><th>Jam</th><th>Kegiatan</th><th>Output</th><th>Durasi</th></tr>"
+            for i, r in enumerate(st.session_state.data_lkh):
+                html_harian += f"<tr><td>{i+1}</td><td>{r['tgl']}</td><td>{r['jam']}</td><td>{r['ket']}</td><td>{r['out']}</td><td>{r['durasi']}</td></tr>"
+            html_harian += "</table>"
+            export_pdf(html_harian, filename=f"LKH_Harian_{u['nama']}.pdf")
 
-            if t2 <= t1:
-                st.error("Jam selesai harus lebih besar dari jam mulai")
-                st.stop()
+    # =======================
+    # Rekap Bulanan
+    # =======================
+    elif menu == "📊 Rekap Bulanan":
+        st.header("📊 Rekap Bulanan")
+        if not st.session_state.data_lkh:
+            st.info("⚠️ Belum ada data")
+        else:
+            df_raw = pd.DataFrame(st.session_state.data_lkh)
+            df_raw['tgl'] = pd.to_datetime(df_raw['tgl'])
+            rekap = df_raw.groupby('tgl').agg({'durasi':'sum'}).reset_index().sort_values('tgl')
+            TARGET_HARIAN = 270
+            total_capaian = rekap['durasi'].sum()
+            total_target = len(rekap)*TARGET_HARIAN
+            persen = (total_capaian/total_target*100) if total_target>0 else 0
+            bulan_laporan = BULAN_ID.get(rekap.iloc[0]['tgl'].month,"BULAN INI")
+            
+            st.markdown(f"**Bulan:** {bulan_laporan}")
+            st.dataframe(rekap)
+            st.markdown(f"**Total Capaian:** {total_capaian} menit / {total_target} menit ({persen:.2f}%)")
 
-            durasi = int((t2 - t1).total_seconds() / 60)
-
-            if "data_lkh" not in st.session_state:
-                st.session_state.data_lkh = []
-
-            st.session_state.data_lkh.append({
-                "obj_date": tgl,
-                "hari": HARI_ID[tgl.strftime("%A")],
-                "jam": f"{jam_mulai} - {jam_selesai}",
-                "ket": kegiatan,
-                "out": output,
-                "durasi": durasi
-            })
-
-            save_data(st.session_state.data_lkh)
-            st.toast("Data tersimpan ✅")
-            st.rerun()
-        except:
-            st.error("Format jam salah. Gunakan 08.00 atau 08:00")
-
-    st.markdown("---")
-    for i, d in enumerate(st.session_state.data_lkh):
-        c1, c2 = st.columns([9,1])
-        c1.markdown(f"**{d['jam']}**  \n{d['ket']}  \n⏱ {d['durasi']} menit")
-        if c2.button("🗑️", key=f"del{i}"):
-            st.session_state.data_lkh.pop(i)
-            save_data(st.session_state.data_lkh)
-            st.rerun()
-
-# ------------------------------
-# 5. REKAP BULANAN
-# ------------------------------
-else:
-    st.header("📊 Rekap Bulanan")
-
-    if "data_lkh" not in st.session_state or not st.session_state.data_lkh:
-        st.info("Belum ada data. Silakan input kegiatan di menu 'Input Harian' dulu.")
-        st.stop()
-
-    df_raw = pd.DataFrame(st.session_state.data_lkh)
-    df_raw["obj_date"] = pd.to_datetime(df_raw["obj_date"])
-
-    bulan = st.selectbox(
-        "Pilih Bulan",
-        sorted(df_raw["obj_date"].dt.month.unique()),
-        format_func=lambda x: BULAN_ID[x]
-    )
-
-    df_bln = df_raw[df_raw["obj_date"].dt.month == bulan]
-    rekap = df_bln.groupby("obj_date")["durasi"].sum().reset_index()
-
-    TARGET = 270
-    total = rekap["durasi"].sum()
-    persen = total / (len(rekap) * TARGET) * 100 if len(rekap) else 0
-
-    st.dataframe(rekap, use_container_width=True)
-    st.success(f"Total: {total} menit | Capaian: {persen:.2f}%")
+            # Export PDF Bulanan
+            html_bulanan = "<h2>Rekap Bulanan</h2><table border=1><tr><th>No</th><th>Tanggal</th><th>Durasi</th><th>Target</th></tr>"
+            for i, r in enumerate(rekap.itertuples()):
+                html_bulanan += f"<tr><td>{i+1}</td><td>{r.tgl.strftime('%Y-%m-%d')}</td><td>{r.durasi}</td><td>{TARGET_HARIAN}</td></tr>"
+            html_bulanan += f"<tr><td colspan=2>Total</td><td>{total_capaian}</td><td>{total_target}</td></tr></table>"
+            export_pdf(html_bulanan, filename=f"Rekap_Bulanan_{u['nama']}.pdf")
