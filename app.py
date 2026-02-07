@@ -84,7 +84,7 @@ if st.session_state.master_data is None:
 df = st.session_state.master_data
 
 # =====================================================
-# DETEKSI KOLOM AMAN (FIX StopIteration)
+# DETEKSI KOLOM AMAN (ANTI ERROR)
 # =====================================================
 KEYWORDS_NAMA = ["NAMA", "NAME", "PEGAWAI"]
 KEYWORDS_NIP  = ["NIP", "NIK", "NO"]
@@ -98,27 +98,37 @@ if col_nama is None:
     st.stop()
 
 # =====================================================
-# LOGIN
+# LOGIN (FIX TypeError)
 # =====================================================
 if "user" not in st.session_state:
     st.title("🔐 Login E-LKH")
 
+    nama_list = (
+        df[col_nama]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+    )
+
     nama = st.selectbox(
         "Pilih Nama",
-        ["-- Pilih --"] + sorted(df[col_nama].dropna().unique())
+        ["-- Pilih --"] + sorted(nama_list)
     )
 
     if st.button("Masuk") and nama != "-- Pilih --":
-        row = df[df[col_nama] == nama].iloc[0]
+        row = df[df[col_nama].astype(str).str.strip() == nama].iloc[0]
+
         nip = "-"
         if col_nip:
-            nip = str(row[col_nip]).replace(".0","").strip()
+            nip = str(row[col_nip]).replace(".0", "").strip()
 
         st.session_state.user = {
             "nama": nama,
             "nip": nip,
             "jabatan": row.get("JABATAN", "Pegawai")
         }
+
         st.session_state.data_lkh = load_data()
         st.rerun()
 
@@ -151,8 +161,9 @@ if menu == "📝 Input Harian":
         try:
             t1 = parse_jam(jam_mulai)
             t2 = parse_jam(jam_selesai)
+
             if t2 <= t1:
-                st.error("Jam selesai harus lebih besar")
+                st.error("Jam selesai harus lebih besar dari jam mulai")
                 st.stop()
 
             durasi = int((t2 - t1).total_seconds() / 60)
@@ -165,15 +176,17 @@ if menu == "📝 Input Harian":
                 "out": output,
                 "durasi": durasi
             })
+
             save_data(st.session_state.data_lkh)
             st.toast("Tersimpan ✅")
             st.rerun()
+
         except:
-            st.error("Format jam salah")
+            st.error("Format jam salah (contoh: 08.00)")
 
     st.markdown("---")
     for i, d in enumerate(st.session_state.data_lkh):
-        c1, c2 = st.columns([9,1])
+        c1, c2 = st.columns([9, 1])
         c1.markdown(f"**{d['jam']}**  \n{d['ket']}  \n⏱ {d['durasi']} menit")
         if c2.button("🗑️", key=f"del{i}"):
             st.session_state.data_lkh.pop(i)
